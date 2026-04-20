@@ -1,0 +1,66 @@
+from arc import Cesium, DynamicPolarizability
+import numpy as np
+import matplotlib.pyplot as plt
+
+atom = Cesium()
+
+calc = DynamicPolarizability(atom, 6, 0, 0.5)
+calc.defineBasis(atom.groundStateN, 25)
+
+# -----------------------------
+# USER INPUT (single control point)
+# -----------------------------
+wl_input_nm = 938  # <-- change this wavelength here
+wl_marker = wl_input_nm * 1e-9
+
+wavelengths = np.linspace(740, 1000, 400) * 1e-9
+
+mj = 0.5
+polarization = 0
+
+alpha_vals = []
+
+for wl in wavelengths:
+
+    alpha0, alpha1, alpha2, core, dynamic, _ = calc.getPolarizability(
+        wl,
+        units="au",
+        accountForStateLifetime=True
+    )
+
+    alpha = alpha0 + core + dynamic + polarization * alpha1 * (mj / 0.5)
+
+    alpha_vals.append(alpha)
+
+alpha_vals = np.array(alpha_vals)
+
+# -----------------------------
+# PLOT
+# -----------------------------
+plt.figure()
+
+plt.plot(wavelengths * 1e9, alpha_vals, 'b')
+
+plt.xlabel("Wavelength (nm)")
+plt.ylabel("Polarizability (a.u.)")
+
+plt.ylim(-6000, 6000)
+
+# vertical line controlled by top variable
+plt.axvline(wl_input_nm, color="black", linestyle="--")
+
+plt.title("Cs 6S1/2: Polarizability")
+plt.show()
+
+# -----------------------------
+# VALUE AT SELECTED WAVELENGTH
+# -----------------------------
+alpha0, alpha1, alpha2, core, dynamic, _ = calc.getPolarizability(
+    wl_marker,
+    units="au",
+    accountForStateLifetime=True
+)
+
+alpha_wl = alpha0 + core + dynamic + polarization * alpha1 * (mj / 0.5)
+
+print(f"α({wl_input_nm:.2f} nm) = {alpha_wl:.3f} a.u.")

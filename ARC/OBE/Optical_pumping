@@ -1,0 +1,145 @@
+import numpy as np
+import pandas as pd
+from scipy.constants import c, epsilon_0, hbar
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+
+# -----------------------------
+# LOAD TRANSITIONS
+# -----------------------------
+df = pd.read_csv(r"C:\Users\Lukef\Code\Quantum_systems\ARC\Calculation_outputs\Cs_transitions.csv")
+
+# -----------------------------
+# USER SELECTS TRANSITION
+# (change indices or filter logic)
+# -----------------------------
+# -----------------------------
+# USER SELECTS TRANSITION (quantum numbers)
+# -----------------------------
+n_i = 6
+l = 1
+j = 0.5
+mj_i = 0.5
+mj_f = 0.5
+q = 0   # polarization selection rule (optional filter)
+
+row = df[
+    (df["n"] == n_i) &
+    (df["l"] == l) &
+    (df["j"] == j) &
+    (df["mj_initial"] == mj_i) &
+    (df["mj_final"] == mj_f) &
+    (df["q"] == q)
+].iloc[0]
+
+wavelength_nm = row["Wavelength (nm)"]
+d_tdm = row["TDM (a0 e)"]
+
+# -----------------------------
+# CONSTANTS
+# -----------------------------
+a0 = 5.29177210903e-11   # Bohr radius (m)
+e = 1.602176634e-19      # electron charge (C)
+
+# convert dipole moment to SI (C·m)
+d = d_tdm * a0 * e
+
+# -----------------------------
+# USER INPUT: LASER INTENSITY
+# -----------------------------
+def intensity_from_power(P, w0):
+    """
+    P  : beam power (W)
+    w0 : beam waist radius (m)
+    returns peak intensity (W/m^2)
+    """
+    return (2 * P) / (np.pi * w0**2)
+# -----------------------------
+# USER INPUT: BEAM PARAMETERS
+# -----------------------------
+P = 50e-6        # power in W 
+w0 = 800e-6    # beam waist in meters 
+I = intensity_from_power(P, w0)
+
+# electric field amplitude
+E0 = np.sqrt(2 * I / (c * epsilon_0))
+
+# -----------------------------
+# DETUNING (user choice)
+# -----------------------------
+Delta = 0.0  # rad/s (set later if scanning)
+
+# -----------------------------
+# RABI FREQUENCY
+# -----------------------------
+Omega = d * E0 / hbar  # rad/s
+
+# -----------------------------
+# SPONTANEOUS DECAY RATE
+# Einstein A coefficient:
+# γ = ω^3 d^2 / (3π ε0 ħ c^3)
+# -----------------------------
+lam = wavelength_nm * 1e-9
+omega = 2 * np.pi * c / lam
+
+gamma = (omega**3 * d**2) / (3 * np.pi * epsilon_0 * hbar * c**3)
+
+# -----------------------------
+# SATURATION PARAMETER (detuning-dependent)
+# -----------------------------
+
+# saturation intensity from atomic linewidth
+Isat = (np.pi * hbar * c * gamma) / (3 * (lam**3))
+
+# dimensionless detuning
+Delta_Hz = Delta / (2*np.pi)
+Gamma_Hz = gamma / (2*np.pi)
+
+# effective saturation parameter
+s0 = I / Isat
+s_eff = s0 / (1 + 4 * (Delta_Hz / Gamma_Hz)**2)
+
+
+print("Selected transition:")
+print(f"λ = {wavelength_nm:.3f} nm")
+print(f"TDM = {d_tdm:.3f} a0e")
+print(f"Ω = {Omega:.3e} rad/s")
+print(f"γ = {gamma:.3e} rad/s")
+print(f"Isat = {Isat:.3e} W/m^2")
+print(f"s0 (on resonance) = {s0:.3e}")
+print(f"s_eff (with detuning) = {s_eff:.3e}")
+
+# -----------------------------
+# OPTICAL BLOCH EQUATIONS
+# -----------------------------
+def bloch(t, y):
+    rho_ee, u, v = y
+
+    drho_ee = -gamma * rho_ee + Omega * v
+    du = -Delta * v - (gamma/2) * u
+    dv = Delta * u - (gamma/2) * v - Omega * (2*rho_ee - 1)
+
+    return [drho_ee, du, dv]
+
+# -----------------------------
+# INITIAL STATE (ground)
+# -----------------------------
+y0 = [0.0, 0.0, 0.0]
+
+t_span = (0, 2e-6)
+t_eval = np.linspace(*t_span, 2000)
+
+sol = solve_ivp(bloch, t_span, y0, t_eval=t_eval)
+
+# -----------------------------
+# PLOT
+# -----------------------------
+plt.plot(sol.t * 1e6, sol.y[0], label="Excited")
+plt.plot(sol.t * 1e6, 1 - sol.y[0], label="Ground")
+
+plt.xlabel("Time (µs)")
+plt.ylabel("Population")
+plt.title("2-level Cs Optical Bloch Dynamics")
+plt.legend()
+plt.show()
+
