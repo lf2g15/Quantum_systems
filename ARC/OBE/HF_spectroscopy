@@ -1,0 +1,166 @@
+from __future__ import division
+import numpy as np
+import pandas as pd
+import scipy.integrate
+import matplotlib.pyplot as plt
+
+# =========================
+# USER PARAMETERS
+# =========================
+
+csv_path = r"C:\Users\Lukef\Code\Quantum_systems\ARC\Calculation_outputs\Cs_BR.csv"
+
+B_target = 6.0  # Gauss
+
+OmegaPk = 2 * np.pi * 0.5e3  # peak Rabi frequency (rad/s)
+
+tMax = 5e-4
+dt_steps = 1000
+
+scan_kHz = 10e3
+
+# =========================
+# LOAD DATA
+# =========================
+
+df = pd.read_csv(csv_path)
+B_vals = df["B (G)"].values
+
+# =========================
+# CLOCK TRANSITION
+# =========================
+
+def get_clock_frequency(B_target):
+    idx = np.argmin(np.abs(B_vals - B_target))
+
+    E3 = df["F=3, mF=0"].values[idx]
+    E4 = df["F=4, mF=0"].values[idx]
+
+    omega0 = E4 - E3
+
+    print("B field (G):", B_vals[idx])
+    print("Transition:", omega0)
+
+    return omega0
+
+omega_0 = get_clock_frequency(B_target)
+
+# =========================
+# POLARIZATION VECTOR (IMPORTANT CHANGE)
+# =========================
+# [pi, sigma+, sigma-]
+
+pol_vec = np.array([1.0, 0.0, 0.0])  # pure π drive example
+
+# normalize total intensity if needed
+pol_vec = pol_vec / np.linalg.norm(pol_vec)
+
+# effective Rabi frequency per channel
+Omega_pi     = OmegaPk * pol_vec[0]
+Omega_sig_p  = OmegaPk * pol_vec[1]
+Omega_sig_m  = OmegaPk * pol_vec[2]
+
+# =========================
+# INITIAL STATE (|g⟩ = |F=3, mF=0⟩)
+# =========================
+
+rho0 = np.zeros((2,2), dtype=complex)
+rho0[0,0] = 1.0
+
+# flatten for solver
+rho0_flat = rho0.flatten()
+
+# =========================
+# PULSE SHAPE
+# =========================
+
+def PulseShape(t):
+    return 1.0
+
+# =========================
+# OBE (2-level, polarization-aware)
+# =========================
+
+def OpticalBloch(t, rho_vec, Det):
+
+    rho = rho_vec.reshape(2,2)
+
+    Omega = PulseShape(t)
+
+    # total coupling (vector-summed Rabi drive)
+    Omega_total = Omega * np.sqrt(
+        np.abs(Omega_pi)**2 +
+        np.abs(Omega_sig_p)**2 +
+        np.abs(Omega_sig_m)**2
+    )
+
+    drho = np.zeros((2,2), dtype=complex)
+
+    # coherence
+    drho[0,1] = (1j * Det) * rho[0,1] + 1j * Omega_total/2 * (rho[0,0] - rho[1,1])
+    drho[1,0] = np.conj(drho[0,1])
+
+    # populations
+    imag = np.imag(rho[0,1])
+
+    drho[0,0] = -Omega_total * imag   # ground
+    drho[1,1] = +Omega_total * imag   # excited
+
+    return drho.flatten()
+
+# =========================
+# TIME EVOLUTION
+# =========================
+
+def evolve(Det):
+
+    r = scipy.integrate.complex_ode(lambda t, y: OpticalBloch(t, y, Det))
+    r.set_initial_value(rho0_flat, 0.0)
+
+    dt = tMax / dt_steps
+
+    while r.successful() and r.t < tMax:
+        out = r.integrate(r.t + dt)
+
+    rho_final = out.reshape(2,2)
+
+    # IMPORTANT: ground state population
+    return np.real(rho_final[0,0])
+
+# =========================
+# SPECTROSCOPY
+# =========================
+
+def spectroscopy(freqs):
+    results = []
+
+    for w in freqs:
+        Det = w - omega_0
+        results.append(evolve(Det))
+
+    return np.array(results)
+
+# =========================
+# SWEEP
+# =========================
+
+freqs = np.linspace(
+    omega_0 - 2*np.pi*scan_kHz,
+    omega_0 + 2*np.pi*scan_kHz,
+    200
+)
+
+spectra = spectroscopy(freqs)
+
+# =========================
+# PLOT
+# =========================
+
+plt.figure()
+plt.plot((freqs - omega_0)/(2*np.pi*1e3), spectra)
+
+plt.xlabel("Detuning (kHz)")
+plt.ylabel("Ground state population")
+plt.title(f"Cs-133 Microwave OBE (B={B_target} G)")
+
+plt.show()
