@@ -1,25 +1,25 @@
 from manim import *
 import numpy as np
 
-bloch_scale = 0.7  # shrink vector (0.5–0.8 good range)
+#run "manim -pql Bloch_sphere_animation_Cs.py Cs_Bloch_sphere_anaimation --fps 60"
+
+bloch_scale = 0.5
 
 class BlochSphereRabi(ThreeDScene):
 
     def construct(self):
 
         # =========================
-        # CAMERA (SLOWER ROTATION)
+        # CAMERA
         # =========================
         self.set_camera_orientation(phi=70 * DEGREES, theta=-45 * DEGREES, zoom=1.0)
         self.camera.background_color = "#0f0f12"
-
-        # MUCH slower rotation
         self.begin_ambient_camera_rotation(rate=0.02)
 
         # =========================
-        # GEOMETRY (LARGER SPHERE)
+        # GEOMETRY
         # =========================
-        R = 1.25  # <-- IMPORTANT FIX
+        R = 1
 
         axes = ThreeDAxes(
             x_range=[-R, R, 1],
@@ -28,6 +28,7 @@ class BlochSphereRabi(ThreeDScene):
             x_length=4,
             y_length=4,
             z_length=4,
+            axis_config={"include_tip": False}
         )
 
         sphere = Sphere(radius=R, resolution=(12, 24))
@@ -35,9 +36,9 @@ class BlochSphereRabi(ThreeDScene):
         sphere.set_stroke(BLUE_D, opacity=0.3, width=1.2)
 
         # =========================
-        # LABELS (UNCHANGED)
+        # LABELS
         # =========================
-        label_offset = 1.4  # increase spacing (try 1.3–1.6)
+        label_offset = 1.4
 
         ket0 = Text("|0>").scale(0.7).move_to(axes.c2p(0, 0, label_offset))
         ket1 = Text("|1>").scale(0.7).move_to(axes.c2p(0, 0, -label_offset))
@@ -47,29 +48,27 @@ class BlochSphereRabi(ThreeDScene):
 
         ket_ip = Text("|+i>").scale(0.7).move_to(axes.c2p(label_offset, 0, 0))
         ket_im = Text("|-i>").scale(0.7).move_to(axes.c2p(-label_offset, 0, 0))
+
         labels = VGroup(ket0, ket1, ket_plus, ket_minus, ket_ip, ket_im)
 
         for l in labels:
             l.rotate(PI/2, axis=RIGHT)
 
         # =========================
-        # PHYSICS
+        # PHYSICS (stronger motion)
         # =========================
-
-        Omega = 2 * np.pi * 1.0
-        Delta = 2 * np.pi * 0.3
+        Omega = 2 * np.pi * 3.0   # increased drive
+        Delta = 2 * np.pi * 1.0   # increased detuning
 
         rho = np.array([1+0j, 0+0j], dtype=complex)
 
-        dt = 0.02
-
-        speed_factor = 0.15  # <-- slower internal evolution
+        dt = 0.005
+        speed_factor = 0.15
         step_counter = 0
 
         # =========================
         # BLOCH STEP
         # =========================
-
         def step(rho):
 
             a, b = rho
@@ -82,10 +81,8 @@ class BlochSphereRabi(ThreeDScene):
             y = 2 * np.imag(rho_ge)
             z = rho_gg - rho_ee
 
-            # FORCE ON SPHERE SURFACE
-            r = np.sqrt(x*x + y*y + z*z)
-            if r > 1e-12:
-                x, y, z = R * x/r, R * y/r, R * z/r
+            # NO projection to sphere → allows richer motion
+            x, y, z = R * x, R * y, R * z
 
             # Schrödinger evolution
             da = -1j * (Delta/2) * a - 1j * (Omega/2) * b
@@ -101,27 +98,26 @@ class BlochSphereRabi(ThreeDScene):
             return np.array([a_new, b_new]), x, y, z
 
         # =========================
-        # BLOCH POSITION
+        # VECTOR POSITION
         # =========================
-
         def bloch_point(x, y, z):
             return axes.c2p(bloch_scale * x, bloch_scale * y, bloch_scale * z)
 
-
-        vec = Line(
-            axes.c2p(0, 0, 0),
-            axes.c2p(0, 0, bloch_scale),
+        # =========================
+        # TRUE 3D ARROW VECTOR
+        # =========================
+        vec = Arrow3D(
+            start=axes.c2p(0, 0, 0),
+            end=axes.c2p(0, 0, bloch_scale),
             color=YELLOW,
-            stroke_width=6
         )
 
         state = {"rho": rho}
         step_counter = 0
 
         # =========================
-        # CLEAN UPDATER (NO GHOST DOTS)
+        # UPDATER
         # =========================
-
         def update_vec(mob):
             nonlocal step_counter
             step_counter += 1
@@ -134,18 +130,20 @@ class BlochSphereRabi(ThreeDScene):
 
             end = bloch_point(x, y, z)
 
-            mob.put_start_and_end_on(axes.c2p(0, 0, 0), end)
+            new_vec = Arrow3D(
+                start=axes.c2p(0, 0, 0),
+                end=end,
+                color=YELLOW,
+            )
 
+            mob.become(new_vec)
 
         vec.add_updater(update_vec)
 
-
         # =========================
-        # BUILD SCENE
+        # SCENE
         # =========================
-
         self.add(axes, sphere, labels)
         self.add(vec)
 
-
-        self.wait(2)
+        self.wait(10)

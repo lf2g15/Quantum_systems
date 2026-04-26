@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import scipy.integrate
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 # =========================
 # USER PARAMETERS
@@ -154,17 +155,42 @@ t, Pg, Pe = evolve()
 # PLOT RABI OSCILLATIONS
 # =========================
 
-plt.figure()
+fig, ax = plt.subplots()
 
-plt.plot(t * 1e3, Pg, label="Ground state")
-#plt.plot(t * 1e3, Pe, label="Excited state")
-plt.ylim(0,1.1)
-plt.xlim(0,max(t*1.05)*1e3)
-plt.xlabel("Time (ms)")
-plt.ylabel("Population")
-plt.title(f"Cs-133 Rabi Oscillations (Δ = {detuning_kHz} kHz)")
+ax.set_xlim(0, np.max(t) * 1e3)
+ax.set_ylim(0, 1.1)
 
-plt.legend()
+ax.set_xlabel("Time (ms)")
+ax.set_ylabel("Ground state population")
+ax.set_title("Rabi Oscillation (live build-up)")
+
+line, = ax.plot([], [], lw=2)
+
+
+def init():
+    line.set_data([], [])
+    return line,
+
+
+def update(i):
+    # progressively reveal curve
+    x = t[:i] * 1e3
+    y = Pg[:i]
+
+    line.set_data(x, y)
+    return line,
+
+
+ani = animation.FuncAnimation(
+    fig,
+    update,
+    frames=len(t),
+    init_func=init,
+    interval=5,   # speed (ms between frames)
+    blit=True
+)
+
 plt.show()
+
 
 
